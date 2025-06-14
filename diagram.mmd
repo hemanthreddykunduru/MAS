@@ -1,0 +1,88 @@
+graph TB
+    Start([Start MCP Server]) --> Init[Initialize MCPServer Class]
+    Init --> InitDB[Initialize SQLite Database]
+    InitDB --> CreateTable[Create chat_history table if not exists]
+    CreateTable --> StartLoop[Start Main Loop]
+    
+    StartLoop --> UserInput[User Input]
+    UserInput --> CheckExit{Check if exit command}
+    CheckExit -->|Yes| Goodbye[Print Goodbye]
+    Goodbye --> End([End Program])
+    
+    CheckExit -->|No| DetectModel[Detect Model Function]
+    
+    DetectModel --> CheckImage{Has Image Keywords}
+    DetectModel --> CheckCode{Has Code Keywords}
+    DetectModel --> CheckMath{Has Math Keywords}
+    
+    CheckImage -->|Yes| CheckImageCode{Also has Code}
+    CheckImageCode -->|Yes| VisionCoder[Model: llama3.2-vision]
+    CheckImageCode -->|No| Vision[Model: llama3.2-vision]
+    
+    CheckImage -->|No| CheckCode
+    CheckCode -->|Yes| Coder[Model: qwen2.5-coder]
+    CheckCode -->|No| CheckMath
+    CheckMath -->|Yes| Math[Model: mathstral]
+    CheckMath -->|No| Default[Model: mistral]
+    
+    VisionCoder --> RunModel[Run Ollama Model]
+    Vision --> RunModel
+    Coder --> RunModel
+    Math --> RunModel
+    Default --> RunModel
+    
+    RunModel --> FormatContext[Format Context from History]
+    FormatContext --> CheckImageUse{use_image flag}
+    
+    CheckImageUse -->|Yes| ExtractImage[Extract Image Path from Prompt]
+    ExtractImage --> FormatImagePrompt[Format Image Prompt]
+    FormatImagePrompt --> ExecuteOllama[Execute Ollama Command]
+    
+    CheckImageUse -->|No| FormatTextPrompt[Format Text Prompt with Context]
+    FormatTextPrompt --> ExecuteOllama
+    
+    ExecuteOllama --> TimingStart[Start Timer]
+    TimingStart --> SubprocessRun[subprocess.run ollama command]
+    SubprocessRun --> TimingEnd[End Timer]
+    TimingEnd --> ParseResponse[Parse Response and Calculate Time]
+    
+    ParseResponse --> CheckError{Subprocess Error}
+    CheckError -->|Yes| ErrorResponse[Return Error Message]
+    CheckError -->|No| SuccessResponse[Return Model Response]
+    
+    ErrorResponse --> UpdateHistory[Update Session History]
+    SuccessResponse --> UpdateHistory
+    UpdateHistory --> SaveToDB[Save to SQLite Database]
+    
+    SaveToDB --> DisplayResponse[Display Response to User]
+    DisplayResponse --> UserInput
+    
+    subgraph Database [SQLite Database Schema]
+        Table[chat_history table<br/>id INTEGER PRIMARY KEY<br/>query TEXT<br/>response TEXT<br/>agent_name TEXT<br/>response_time REAL<br/>timestamp TEXT]
+    end
+    
+    subgraph ModelLogic [Model Selection Logic]
+        ImageAndCode[Image + Code → llama3.2-vision]
+        ImageOnly[Image Only → llama3.2-vision]
+        CodeOnly[Code Only → qwen2.5-coder]
+        MathOnly[Math Only → mathstral]
+        DefaultModel[Default → mistral]
+    end
+    
+    subgraph ContextMgmt [Context Management]
+        SessionHistory[Session History Array<br/>Stores query response tuples]
+        LastTen[Uses last 10 messages for context]
+        ContextFormat[Format User Assistant pattern]
+    end
+    
+    classDef startEnd fill:#f0f9ff,stroke:#7dd3fc,stroke-width:2px,color:#0c4a6e
+    classDef process fill:#fef7ff,stroke:#d8b4fe,stroke-width:2px,color:#581c87
+    classDef decision fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,color:#92400e
+    classDef model fill:#f0fdf4,stroke:#86efac,stroke-width:2px,color:#14532d
+    classDef database fill:#fdf2f8,stroke:#f9a8d4,stroke-width:2px,color:#831843
+    
+    class Start,End,Goodbye startEnd
+    class Init,InitDB,CreateTable,StartLoop,FormatContext,UpdateHistory,SaveToDB,DisplayResponse,ExecuteOllama,TimingStart,SubprocessRun,TimingEnd,ParseResponse process
+    class CheckExit,CheckImage,CheckCode,CheckMath,CheckImageCode,CheckImageUse,CheckError decision
+    class VisionCoder,Vision,Coder,Math,Default,RunModel model
+    class Table database
